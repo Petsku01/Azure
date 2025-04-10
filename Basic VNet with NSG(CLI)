@@ -1,0 +1,69 @@
+# Create resource group
+az group create --name myResourceGroup --location eastus
+
+# Create VNet with AppSubnet
+az network vnet create \
+  --resource-group myResourceGroup \
+  --name myVNet \
+  --address-prefix 10.0.0.0/16 \
+  --subnet-name AppSubnet \
+  --subnet-prefix 10.0.1.0/24 \
+  --location eastus
+
+# Add DBSubnet
+az network vnet subnet create \
+  --resource-group myResourceGroup \
+  --vnet-name myVNet \
+  --name DBSubnet \
+  --address-prefix 10.0.2.0/24
+
+# Create App NSG with HTTP rule
+az network nsg create \
+  --resource-group myResourceGroup \
+  --name AppNSG \
+  --location eastus
+
+az network nsg rule create \
+  --resource-group myResourceGroup \
+  --nsg-name AppNSG \
+  --name AllowHTTP \
+  --priority 100 \
+  --protocol Tcp \
+  --direction Inbound \
+  --source-address-prefix "*" \
+  --source-port-range "*" \
+  --destination-address-prefix "10.0.1.0/24" \
+  --destination-port-range 80 \
+  --access Allow
+
+# Create DB NSG with SQL rule
+az network nsg create \
+  --resource-group myResourceGroup \
+  --name DBNSG \
+  --location eastus
+
+az network nsg rule create \
+  --resource-group myResourceGroup \
+  --nsg-name DBNSG \
+  --name AllowSQL \
+  --priority 100 \
+  --protocol Tcp \
+  --direction Inbound \
+  --source-address-prefix "10.0.1.0/24" \
+  --source-port-range "*" \
+  --destination-address-prefix "10.0.2.0/24" \
+  --destination-port-range 1433 \
+  --access Allow
+
+# Associate NSGs with subnets
+az network vnet subnet update \
+  --resource-group myResourceGroup \
+  --vnet-name myVNet \
+  --name AppSubnet \
+  --network-security-group AppNSG
+
+az network vnet subnet update \
+  --resource-group myResourceGroup \
+  --vnet-name myVNet \
+  --name DBSubnet \
+  --network-security-group DBNSG
