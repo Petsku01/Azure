@@ -1,0 +1,89 @@
+# Create resource group
+az group create --name myResourceGroup --location eastus
+
+# Create VNet with AzureBastionSubnet
+az network vnet create \
+  --resource-group myResourceGroup \
+  --name myVNet \
+  --address-prefix 10.0.0.0/16 \
+  --subnet-name AzureBastionSubnet \
+  --subnet-prefix 10.0.1.0/24 \
+  --location eastus
+
+# Add TargetVMSubnet
+az network vnet subnet create \
+  --resource-group myResourceGroup \
+  --vnet-name myVNet \
+  --name TargetVMSubnet \
+  --address-prefix 10.0.2.0/24
+
+# Create NSG for TargetVMSubnet
+az network nsg create \
+  --resource-group myResourceGroup \
+  --name TargetVMNSG \
+  --location eastus
+
+# NSG Rule: Allow RDP from AzureBastionSubnet
+az network nsg rule create \
+  --resource-group myResourceGroup \
+  --nsg-name TargetVMNSG \
+  --name AllowRDPFromBastion \
+  --priority 100 \
+  --protocol Tcp \
+  --direction Inbound \
+  --source-address-prefix "10.0.1.0/24" \
+  --source-port-range "*" \
+  --destination-address-prefix "10.0.2.0/24" \
+  --destination-port-range 3389 \
+  --access Allow
+
+# NSG Rule: Allow SSH from AzureBastionSubnet
+az network nsg rule create \
+  --resource-group myResourceGroup \
+  --nsg-name TargetVMNSG \
+  --name AllowSSHFromBastion \
+  --priority 110 \
+  --protocol Tcp \
+  --direction Inbound \
+  --source-address-prefix "10.0.1.0/24" \
+  --source-port-range "*" \
+  --destination-address-prefix "10.0.2.0/24" \
+  --destination-port-range 22 \
+  --access Allow
+
+# NSG Rule: Deny all other inbound traffic
+az network nsg rule create \
+  --resource-group myResourceGroup \
+  --nsg-name TargetVMNSG \
+  --name DenyAllInbound \
+  --priority 200 \
+  --protocol "*" \
+  --direction Inbound \
+  --source-address-prefix "*" \
+  --source-port-range "*" \
+  --destination-address-prefix "10.0.2.0/24" \
+  --destination-port-range "*" \
+  --access Deny
+
+# Associate NSG with TargetVMSubnet
+az network vnet subnet update \
+  --resource-group myResourceGroup \
+  --vnet-name myVNet \
+  --name TargetVMSubnet \
+  --network-security-group TargetVMNSG
+
+# Create public IP for Azure Bastion
+az network public-ip create \
+  --resource-group myResourceGroup \
+  --name bastionPublicIP \
+  --sku Standard \
+  --allocation-method Static \
+  --location eastus
+
+# Create Azure Bastion
+az network bastion create \
+  --resource-group myResourceGroup \
+  --name myBastion \
+  --vnet-name myVNet \
+  --public-ip-address bastionPublicIP \
+  --location eastus
