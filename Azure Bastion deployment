@@ -5,7 +5,7 @@ az group create --name myResourceGroup --location eastus
 az network vnet create \
   --resource-group myResourceGroup \
   --name myVNet \
-  --address-prefix 10.0.0.0/16 \
+  --address-prefix 10.0.0.0/16 \ 
   --subnet-name AzureBastionSubnet \
   --subnet-prefix 10.0.1.0/24 \
   --location eastus
