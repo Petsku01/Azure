@@ -1,0 +1,104 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "sharedKey": {
+      "type": "string",
+      "defaultValue": "MySecretKey123"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2023-11-01",
+      "name": "myVNet",
+      "location": "eastus",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": ["10.0.0.0/16"]
+        },
+        "subnets": [
+          {
+            "name": "GatewaySubnet",
+            "properties": {
+              "addressPrefix": "10.0.255.0/27"
+            }
+          },
+          {
+            "name": "AppSubnet",
+            "properties": {
+              "addressPrefix": "10.0.1.0/24"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/publicIPAddresses",
+      "apiVersion": "2023-11-01",
+      "name": "vpnGatewayIP",
+      "location": "eastus",
+      "properties": {
+        "publicIPAllocationMethod": "Dynamic"
+      }
+    },
+    {
+      "type": "Microsoft.Network/virtualNetworkGateways",
+      "apiVersion": "2023-11-01",
+      "name": "myVPNGateway",
+      "location": "eastus",
+      "dependsOn": ["myVNet", "vpnGatewayIP"],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "gwipconfig",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "subnet": {
+                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'myVNet', 'GatewaySubnet')]"
+              },
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses', 'vpnGatewayIP')]"
+              }
+            }
+          }
+        ],
+        "gatewayType": "Vpn",
+        "vpnType": "RouteBased",
+        "sku": {
+          "name": "VpnGw1",
+          "tier": "VpnGw1"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Network/localNetworkGateways",
+      "apiVersion": "2023-11-01",
+      "name": "onPremGateway",
+      "location": "eastus",
+      "properties": {
+        "localNetworkAddressSpace": {
+          "addressPrefixes": ["192.168.1.0/24"]
+        },
+        "gatewayIpAddress": "203.0.113.1" // Replace with your on-premises VPN public IP
+      }
+    },
+    {
+      "type": "Microsoft.Network/connections",
+      "apiVersion": "2023-11-01",
+      "name": "vpnConnection",
+      "location": "eastus",
+      "dependsOn": ["myVPNGateway", "onPremGateway"],
+      "properties": {
+        "virtualNetworkGateway1": {
+          "id": "[resourceId('Microsoft.Network/virtualNetworkGateways', 'myVPNGateway')]"
+        },
+        "localNetworkGateway2": {
+          "id": "[resourceId('Microsoft.Network/localNetworkGateways', 'onPremGateway')]"
+        },
+        "connectionType": "IPsec",
+        "sharedKey": "[parameters('sharedKey')]"
+      }
+    }
+  ]
+}
