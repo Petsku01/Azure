@@ -1,0 +1,53 @@
+# Create resource group
+az group create --name myResourceGroup --location eastus
+
+# Create VNet with GatewaySubnet
+az network vnet create \
+  --resource-group myResourceGroup \
+  --name myVNet \
+  --address-prefix 10.0.0.0/16 \
+  --subnet-name GatewaySubnet \
+  --subnet-prefix 10.0.255.0/27 \
+  --location eastus
+
+# Add AppSubnet
+az network vnet subnet create \
+  --resource-group myResourceGroup \
+  --vnet-name myVNet \
+  --name AppSubnet \
+  --address-prefix 10.0.1.0/24
+
+# Create public IP for VPN gateway
+az network public-ip create \
+  --resource-group myResourceGroup \
+  --name vpnGatewayIP \
+  --allocation-method Dynamic \
+  --location eastus
+
+# Create VPN gateway
+az network vnet-gateway create \
+  --resource-group myResourceGroup \
+  --name myVPNGateway \
+  --public-ip-address vpnGatewayIP \
+  --vnet myVNet \
+  --gateway-type Vpn \
+  --vpn-type RouteBased \
+  --sku VpnGw1 \
+  --location eastus
+
+# Create local network gateway (on-premises)
+az network local-gateway create \
+  --resource-group myResourceGroup \
+  --name onPremGateway \
+  --gateway-ip-address 203.0.113.1 \ # Replace with your on-premises VPN IP
+  --local-address-prefixes 192.168.1.0/24 \
+  --location eastus
+
+# Create VPN connection
+az network vpn-connection create \
+  --resource-group myResourceGroup \
+  --name vpnConnection \
+  --vnet-gateway1 myVPNGateway \
+  --local-gateway2 onPremGateway \
+  --shared-key MySecretKey123 \
+  --location eastus
