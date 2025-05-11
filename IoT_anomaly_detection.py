@@ -1,6 +1,6 @@
 # Only tested once
 # be warned documentation found from stackoverflow
-
+# updated read me
 
 import azure.functions as func
 import azure.cosmos.cosmos_client as cosmos_client
