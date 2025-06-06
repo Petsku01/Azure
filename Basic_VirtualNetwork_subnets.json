@@ -1,0 +1,98 @@
+{
+  // Defines the schema for the ARM template
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  // Version of the template for tracking changes
+  "contentVersion": "1.0.0.0",
+  // Parameters for reusable and configurable values
+  "parameters": {
+    // Parameter for the virtual network name
+    "vnetName": {
+      "type": "string",
+      "defaultValue": "myVNet",
+      "metadata": {
+        "description": "Name of the virtual network"
+      }
+    },
+    // Parameter for the Azure region
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Location for the virtual network"
+      }
+    },
+    // Parameter for the VNet address space
+    "vnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.0.0/16",
+      "metadata": {
+        "description": "Address prefix for the virtual network"
+      }
+    },
+    // Parameter for the first subnet address prefix
+    "appSubnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.1.0/24",
+      "metadata": {
+        "description": "Address prefix for the App subnet"
+      }
+    },
+    // Parameter for the second subnet address prefix
+    "dbSubnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.2.0/24",
+      "metadata": {
+        "description": "Address prefix for the DB subnet"
+      }
+    }
+  },
+  // Resources to be deployed
+  "resources": [
+    {
+      // Resource type for creating a virtual network
+      "type": "Microsoft.Network/virtualNetworks",
+      // API version for the virtual network resource
+      "apiVersion": "2023-11-01",
+      // Name of the virtual network, referencing the parameter
+      "name": "[parameters('vnetName')]",
+      // Location of the virtual network, referencing the parameter
+      "location": "[parameters('location')]",
+      // Tags for resource management and organization
+      "tags": {
+        "environment": "production",
+        "purpose": "application-networking"
+      },
+      // Properties defining the virtual network configuration
+      "properties": {
+        // Address space for the virtual network
+        "addressSpace": {
+          "addressPrefixes": [
+            "[parameters('vnetAddressPrefix')]"
+          ]
+        },
+        // Subnets within the virtual network
+        "subnets": [
+          {
+            // Name of the first subnet
+            "name": "AppSubnet",
+            // Properties for the first subnet
+            "properties": {
+              // Address prefix for the App subnet
+              "addressPrefix": "[parameters('appSubnetPrefix')]"
+            }
+          },
+          {
+            // Name of the second subnet
+            "name": "DBSubnet",
+            // Properties for the second subnet
+            "properties": {
+              // Address prefix for the DB subnet
+              "addressPrefix": "[parameters('dbSubnetPrefix')]"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
+
