@@ -1,0 +1,253 @@
+// https://learn.microsoft.com/en-us/azure/bastion/bastion-overview
+
+{
+  // Schema for Azure Resource Manager template, defining the structure for deployment
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  // Version of the template, used for tracking changes
+  "contentVersion": "1.0.0.0",
+  // Parameters allow customization of the deployment without modifying the template
+  "parameters": {
+    // Azure region for resource deployment, restricted to common regions
+    "location": {
+      "type": "string",
+      "defaultValue": "eastus",
+      "allowedValues": ["eastus", "westus2", "northeurope", "westeurope"] // Restrict to supported regions
+    },
+    // Name of the virtual network, with length constraints
+    "vnetName": {
+      "type": "string",
+      "defaultValue": "myVNet",
+      "minLength": 2,
+      "maxLength": 64
+    },
+    // Name of the Azure Bastion host, with length constraints
+    "bastionName": {
+      "type": "string",
+      "defaultValue": "myBastion",
+      "minLength": 3,
+      "maxLength": 24
+    },
+    // Name of the public IP address for Bastion
+    "publicIpName": {
+      "type": "string",
+      "defaultValue": "bastionPublicIP",
+      "minLength": 3,
+      "maxLength": 63
+    },
+    // Name of the network security group for the VM subnet
+    "nsgName": {
+      "type": "string",
+      "defaultValue": "TargetVMNSG",
+      "minLength": 3,
+      "maxLength": 80
+    },
+    // Address prefix for AzureBastionSubnet (minimum /26 per Bastion requirements)
+    "bastionSubnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.1.0/26" // Optimized subnet size for Bastion
+    },
+    // Address prefix for the VM subnet
+    "vmSubnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.2.0/24" // Subnet for target VMs
+    }
+  },
+  // Resources to be deployed
+  "resources": [
+    {
+      // Network Security Group (NSG) to control traffic to the VM subnet
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "apiVersion": "2023-11-01", // Latest stable API version for NSGs as of template creation
+      "name": "[parameters('nsgName')]", // Parameterized NSG name for reusability
+      "location": "[parameters('location')]", // Deploy in specified region
+      "properties": {
+        // Security rules to control inbound and outbound traffic
+        "securityRules": [
+          {
+            // Allow RDP traffic from Bastion subnet to VM subnet for secure access
+            "name": "AllowRDPFromBastion",
+            "properties": {
+              "priority": 100, // Lower number = higher priority
+              "protocol": "Tcp", // RDP uses TCP
+              "access": "Allow",
+              "direction": "Inbound",
+              "sourceAddressPrefix": "[parameters('bastionSubnetPrefix')]", // From Bastion subnet
+              "sourcePortRange": "*", // Any source port
+              "destinationAddressPrefix": "[parameters('vmSubnetPrefix')]", // To VM subnet
+              "destinationPortRange": "3389" // RDP port
+            }
+          },
+          {
+            // Allow SSH traffic from Bastion subnet to VM subnet for secure access
+            "name": "AllowSSHFromBastion",
+            "properties": {
+              "priority": 110,
+              "protocol": "Tcp", // SSH uses TCP
+              "access": "Allow",
+              "direction": "Inbound",
+              "sourceAddressPrefix": "[parameters('bastionSubnetPrefix')]", // From Bastion subnet
+              "sourcePortRange": "*", // Any source port
+              "destinationAddressPrefix": "[parameters('vmSubnetPrefix')]", // To VM subnet
+              "destinationPortRange": "22" // SSH port
+            }
+          },
+          {
+            // Allow HTTPS outbound for Bastion management (required by Azure Bastion)
+            "name": "AllowHttpsOutbound",
+            "properties": {
+              "priority": 120,
+              "protocol": "Tcp", // HTTPS uses TCP
+              "access": "Allow",
+              "direction": "Outbound",
+              "sourceAddressPrefix": "[parameters('bastionSubnetPrefix')]", // From Bastion subnet
+              "sourcePortRange": "*", // Any source port
+              "destinationAddressPrefix": "Internet", // Azure services
+              "destinationPortRange": "443" // HTTPS port
+            }
+          },
+          {
+            // Allow HTTP outbound for additional Bastion management (optional for robustness)
+            "name": "AllowHttpOutbound",
+            "properties": {
+              "priority": 130,
+              "protocol": "Tcp", // HTTP uses TCP
+              "access": "Allow",
+              "direction": "Outbound",
+              "sourceAddressPrefix": "[parameters('bastionSubnetPrefix')]", // From Bastion subnet
+              "sourcePortRange": "*", // Any source port
+              "destinationAddressPrefix": "Internet", // Azure services
+              "destinationPortRange": "80" // HTTP port
+            }
+          },
+          {
+            // Deny all other inbound traffic to VM subnet for enhanced security
+            "name": "DenyAllInbound",
+            "properties": {
+              "priority": 200, // Lower priority than allow rules
+              "protocol": "*", // All protocols
+              "access": "Deny",
+              "direction": "Inbound",
+              "sourceAddressPrefix": "*", // Any source
+              "sourcePortRange": "*", // Any source port
+              "destinationAddressPrefix": "[parameters('vmSubnetPrefix')]", // To VM subnet
+              "destinationPortRange": "*" // Any destination port
+            }
+          }
+        ]
+      },
+      // Tags for resource organization and cost tracking
+      "tags": {
+        "environment": "production",
+        "project": "bastion-deployment"
+      }
+    },
+    {
+      // Virtual Network (VNet) to host subnets for Bastion and VMs
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2023-11-01", // Latest stable API version for VNets
+      "name": "[parameters('vnetName')]", // Parameterized VNet name
+      "location": "[parameters('location')]", // Deploy in specified region
+      // Ensure NSG is created before VNet due to subnet reference
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/networkSecurityGroups', parameters('nsgName'))]"
+      ],
+      "properties": {
+        // Define VNet address space
+        "addressSpace": {
+          "addressPrefixes": ["10.0.0.0/16"] // VNet address range
+        },
+        // Subnets within the VNet
+        "subnets": [
+          {
+            // Dedicated subnet for Azure Bastion (must be named AzureBastionSubnet)
+            "name": "AzureBastionSubnet",
+            "properties": {
+              "addressPrefix": "[parameters('bastionSubnetPrefix')]" // Minimum /26
+            }
+          },
+          {
+            // Subnet for target VMs
+            "name": "TargetVMSubnet",
+            "properties": {
+              "addressPrefix": "[parameters('vmSubnetPrefix')]", // VM subnet range
+              // Associate NSG with VM subnet
+              "networkSecurityGroup": {
+                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', parameters('nsgName'))]"
+              }
+            }
+          }
+        ]
+      },
+      // Tags for resource organization
+      "tags": {
+        "environment": "production",
+        "project": "bastion-deployment"
+      }
+    },
+    {
+      // Public IP address for Azure Bastion
+      "type": "Microsoft.Network/publicIPAddresses",
+      "apiVersion": "2023-11-01", // Latest stable API version for public IPs
+      "name": "[parameters('publicIpName')]", // Parameterized public IP name
+      "location": "[parameters('location')]", // Deploy in specified region
+      "sku": {
+        "name": "Standard" // Required for Bastion, supports static allocation
+      },
+      "properties": {
+        "publicIPAllocationMethod": "Static" // Static IP for Bastion
+      },
+      // Tags for resource organization
+      "tags": {
+        "environment": "production",
+        "project": "bastion-deployment"
+      }
+    },
+    {
+      // Azure Bastion host for secure RDP/SSH access to VMs
+      "type": "Microsoft.Network/bastionHosts",
+      "apiVersion": "2023-11-01", // Latest stable API version for Bastion
+      "name": "[parameters('bastionName')]", // Parameterized Bastion name
+      "location": "[parameters('location')]", // Deploy in specified region
+      // Ensure VNet and public IP are created before Bastion
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]",
+        "[resourceId('Microsoft.Network/publicIPAddresses', parameters('publicIpName'))]"
+      ],
+      "sku": {
+        "name": "Standard" // Standard SKU for full Bastion features
+      },
+      "properties": {
+        // IP configuration linking Bastion to subnet and public IP
+        "ipConfigurations": [
+          {
+            "name": "bastionIpConfig",
+            "properties": {
+              // Reference to AzureBastionSubnet
+              "subnet": {
+                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), 'AzureBastionSubnet')]"
+              },
+              // Reference to public IP
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses', parameters('publicIpName'))]"
+              }
+            }
+          }
+        ]
+      },
+      // Tags for resource organization
+      "tags": {
+        "environment": "production",
+        "project": "bastion-deployment"
+      }
+    }
+  ],
+  // Outputs to return useful information post-deployment
+  "outputs": {
+    // Return the public IP address of the Bastion host
+    "bastionPublicIp": {
+      "type": "string",
+      "value": "[reference(parameters('publicIpName')).ipAddress]"
+    }
+  }
+}
+
