@@ -1,83 +1,239 @@
 {
+  // Specifies the schema for the ARM template, ensuring compatibility with Azure deployment tools
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  // Tracks the template version for change management and documentation
   "contentVersion": "1.0.0.0",
+  // Parameters allow flexible customization of the deployment without modifying the template
+  "parameters": {
+    // Azure region where resources will be deployed
+    "location": {
+      "type": "string",
+      "defaultValue": "eastus",
+      "allowedValues": ["eastus", "westus2", "northeurope", "westeurope"],
+      "metadata": {
+        // Restricts deployment to supported regions for compliance and latency optimization
+        "description": "Azure region for resource deployment. Ensure compliance with latency and regulatory requirements."
+      }
+    },
+    // Name of the virtual network
+    "vnetName": {
+      "type": "string",
+      "defaultValue": "myVNet",
+      "minLength": 2,
+      "maxLength": 64,
+      "metadata": {
+        // Azure VNet names must be 2-64 characters long
+        "description": "Name of the virtual network, adhering to Azure naming constraints."
+      }
+    },
+    // Name of the Network Security Group for the application subnet
+    "appNsgName": {
+      "type": "string",
+      "defaultValue": "AppNSG",
+      "minLength": 3,
+      "maxLength": 80,
+      "metadata": {
+        // Azure NSG names must be 3-80 characters long
+        "description": "Name of the NSG for the application subnet."
+      }
+    },
+    // Name of the Network Security Group for the database subnet
+    "dbNsgName": {
+      "type": "string",
+      "defaultValue": "DBNSG",
+      "minLength": 3,
+      "maxLength": 80,
+      "metadata": {
+        // Azure NSG names must be 3-80 characters long
+        "description": "Name of the NSG for the database subnet."
+      }
+    },
+    // Address prefix for the application subnet
+    "appSubnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.1.0/24",
+      "metadata": {
+        // Must be within VNet address space and non-overlapping
+        "description": "CIDR block for the application subnet. Must be within VNet address space (10.0.0.0/16) and non-overlapping with other subnets."
+      }
+    },
+    // Address prefix for the database subnet
+    "dbSubnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.2.0/24",
+      "metadata": {
+        // Must be within VNet address space and non-overlapping
+        "description": "CIDR block for the database subnet. Must be within VNet address space (10.0.0.0/16) and non-overlapping with other subnets."
+      }
+    },
+    // Source address prefix for HTTP traffic to the application subnet
+    "httpSourcePrefix": {
+      "type": "string",
+      "defaultValue": "VirtualNetwork",
+      "metadata": {
+        // 'VirtualNetwork' restricts to VNet traffic for security
+        "description": "Source for HTTP traffic to AppSubnet. 'VirtualNetwork' restricts to VNet; use '*' for public access or specify an IP range."
+      }
+    }
+  },
+  // Variables centralize reusable values to reduce duplication and improve maintainability
+  "variables": {
+    // Common tags applied to all resources for organization and cost tracking
+    "tags": {
+      "environment": "production",
+      "project": "vnet-deployment"
+    }
+  },
+  // Resources to be deployed in Azure
   "resources": [
     {
-      "type": "Microsoft.Network/virtualNetworks",
-      "apiVersion": "2023-11-01",
-      "name": "myVNet",
-      "location": "eastus",
+      // Network Security Group (NSG) for controlling traffic to the application subnet
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "apiVersion": "2023-11-01", // Latest stable API version for NSGs as of 2023
+      "name": "[parameters('appNsgName')]", // Uses parameterized NSG name
+      "location": "[parameters('location')]", // Deploys in the specified region
       "properties": {
+        // Defines security rules to control inbound and outbound traffic
+        "securityRules": [
+          {
+            // Allows HTTP traffic (port 80) to the application subnet
+            "name": "AllowHTTP",
+            "properties": {
+              "priority": 100, // Higher priority ensures this rule is evaluated first (100–4096)
+              "protocol": "Tcp", // HTTP uses TCP protocol
+              "access": "Allow", // Permits matching traffic
+              "direction": "Inbound", // Applies to incoming traffic
+              "sourceAddressPrefix": "[parameters('httpSourcePrefix')]", // Source of HTTP traffic (e.g., VirtualNetwork)
+              "sourcePortRange": "*", // Any source port
+              "destinationAddressPrefix": "[parameters('appSubnetPrefix')]", // Targets the application subnet
+              "destinationPortRange": "80" // HTTP port
+            }
+          },
+          {
+            // Denies all other inbound traffic to the application subnet for security
+            "name": "DenyAllInbound",
+            "properties": {
+              "priority": 1000, // Lower priority to allow specific rules to take precedence
+              "protocol": "*", // Applies to all protocols
+              "access": "Deny", // Blocks matching traffic
+              "direction": "Inbound", // Applies to incoming traffic
+              "sourceAddressPrefix": "*", // Any source
+              "sourcePortRange": "*", // Any source port
+              "destinationAddressPrefix": "[parameters('appSubnetPrefix')]", // Targets the application subnet
+              "destinationPortRange": "*", // Any destination port
+              "description": "Denies all inbound traffic not explicitly allowed by higher-priority rules."
+            }
+          }
+        ]
+      },
+      // Applies common tags for resource organization
+      "tags": "[variables('tags')]"
+    },
+    {
+      // Network Security Group (NSG) for controlling traffic to the database subnet
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "apiVersion": "2023-11-01", // Latest stable API version for NSGs as of 2023
+      "name": "[parameters('dbNsgName')]", // Uses parameterized NSG name
+      "location": "[parameters('location')]", // Deploys in the specified region
+      "properties": {
+        // Defines security rules to control inbound and outbound traffic
+        "securityRules": [
+          {
+            // Allows SQL traffic (port 1433) from the application subnet to the database subnet
+            "name": "AllowSQL",
+            "properties": {
+              "priority": 100, // Higher priority ensures this rule is evaluated first
+              "protocol": "Tcp", // SQL Server uses TCP protocol
+              "access": "Allow", // Permits matching traffic
+              "direction": "Inbound", // Applies to incoming traffic
+              "sourceAddressPrefix": "[parameters('appSubnetPrefix')]", // Restricts to application subnet
+              "sourcePortRange": "*", // Any source port
+              "destinationAddressPrefix": "[parameters('dbSubnetPrefix')]", // Targets the database subnet
+              "destinationPortRange": "1433" // SQL Server default port
+            }
+          },
+          {
+            // Denies all other inbound traffic to the database subnet for security
+            "name": "DenyAllInbound",
+            "properties": {
+              "priority": 1000, // Lower priority to allow specific rules to take precedence
+              "protocol": "*", // Applies to all protocols
+              "access": "Deny", // Blocks matching traffic
+              "direction": "Inbound", // Applies to incoming traffic
+              "sourceAddressPrefix": "*", // Any source
+              "sourcePortRange": "*", // Any source port
+              "destinationAddressPrefix": "[parameters('dbSubnetPrefix')]", // Targets the database subnet
+              "destinationPortRange": "*", // Any destination port
+              "description": "Denies all inbound traffic not explicitly allowed by higher-priority rules."
+            }
+          }
+        ]
+      },
+      // Applies common tags for resource organization
+      "tags": "[variables('tags')]"
+    },
+    {
+      // Virtual Network (VNet) to host application and database subnets
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2023-11-01", // Latest stable API version for VNets as of 2023
+      "name": "[parameters('vnetName')]", // Uses parameterized VNet name
+      "location": "[parameters('location')]", // Deploys in the specified region
+      // Ensures NSGs are created before VNet due to subnet NSG associations
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/networkSecurityGroups', parameters('appNsgName'))]",
+        "[resourceId('Microsoft.Network/networkSecurityGroups', parameters('dbNsgName'))]"
+      ],
+      "properties": {
+        // Defines the VNet's address space
         "addressSpace": {
-          "addressPrefixes": ["10.0.0.0/16"]
+          "addressPrefixes": ["10.0.0.0/16"] // VNet address range, must encompass all subnet prefixes
         },
+        // Defines subnets within the VNet
         "subnets": [
           {
+            // Subnet for application VMs
             "name": "AppSubnet",
             "properties": {
-              "addressPrefix": "10.0.1.0/24",
+              "addressPrefix": "[parameters('appSubnetPrefix')]", // Subnet range for application VMs
+              // Associates the application NSG with this subnet
               "networkSecurityGroup": {
-                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', 'AppNSG')]"
+                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', parameters('appNsgName'))]"
               }
             }
           },
           {
+            // Subnet for database VMs
             "name": "DBSubnet",
             "properties": {
-              "addressPrefix": "10.0.2.0/24",
+              "addressPrefix": "[parameters('dbSubnetPrefix')]", // Subnet range for database VMs
+              // Associates the database NSG with this subnet
               "networkSecurityGroup": {
-                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', 'DBNSG')]"
+                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', parameters('dbNsgName'))]"
               }
             }
           }
         ]
-      }
-    },
-    {
-      "type": "Microsoft.Network/networkSecurityGroups",
-      "apiVersion": "2023-11-01",
-      "name": "AppNSG",
-      "location": "eastus",
-      "properties": {
-        "securityRules": [
-          {
-            "name": "AllowHTTP",
-            "properties": {
-              "priority": 100,
-              "protocol": "Tcp",
-              "access": "Allow",
-              "direction": "Inbound",
-              "sourceAddressPrefix": "*",
-              "sourcePortRange": "*",
-              "destinationAddressPrefix": "10.0.1.0/24",
-              "destinationPortRange": "80"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "type": "Microsoft.Network/networkSecurityGroups",
-      "apiVersion": "2023-11-01",
-      "name": "DBNSG",
-      "location": "eastus",
-      "properties": {
-        "securityRules": [
-          {
-            "name": "AllowSQL",
-            "properties": {
-              "priority": 100,
-              "protocol": "Tcp",
-              "access": "Allow",
-              "direction": "Inbound",
-              "sourceAddressPrefix": "10.0.1.0/24", // Only from AppSubnet
-              "sourcePortRange": "*",
-              "destinationAddressPrefix": "10.0.2.0/24",
-              "destinationPortRange": "1433"
-            }
-          }
-        ]
-      }
+      },
+      // Applies common tags for resource organization
+      "tags": "[variables('tags')]"
     }
-  ]
+  ],
+  // Outputs return useful information after deployment
+  "outputs": {
+    // Returns the resource ID of the virtual network
+    "vnetResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
+    },
+    // Returns the resource ID of the application subnet
+    "appSubnetResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), 'AppSubnet')]"
+    },
+    // Returns the resource ID of the database subnet
+    "dbSubnetResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), 'DBSubnet')]"
+    }
+  }
 }
