@@ -5,9 +5,9 @@ az group create --name myResourceGroup --location eastus
 az network vnet create \
   --resource-group myResourceGroup \
   --name myVNet \
-  --address-prefix 10.0.0.0/16 \ 
+  --address-prefix 10.0.0.0/16 \
   --subnet-name AzureBastionSubnet \
-  --subnet-prefix 10.0.1.0/24 \
+  --subnet-prefix 10.0.1.0/26 \
   --location eastus
 
 # Add TargetVMSubnet
@@ -31,7 +31,7 @@ az network nsg rule create \
   --priority 100 \
   --protocol Tcp \
   --direction Inbound \
-  --source-address-prefix "10.0.1.0/24" \
+  --source-address-prefix "10.0.1.0/26" \
   --source-port-range "*" \
   --destination-address-prefix "10.0.2.0/24" \
   --destination-port-range 3389 \
@@ -45,25 +45,11 @@ az network nsg rule create \
   --priority 110 \
   --protocol Tcp \
   --direction Inbound \
-  --source-address-prefix "10.0.1.0/24" \
+  --source-address-prefix "10.0.1.0/26" \
   --source-port-range "*" \
   --destination-address-prefix "10.0.2.0/24" \
   --destination-port-range 22 \
   --access Allow
-
-# NSG Rule: Deny all other inbound traffic
-az network nsg rule create \
-  --resource-group myResourceGroup \
-  --nsg-name TargetVMNSG \
-  --name DenyAllInbound \
-  --priority 200 \
-  --protocol "*" \
-  --direction Inbound \
-  --source-address-prefix "*" \
-  --source-port-range "*" \
-  --destination-address-prefix "10.0.2.0/24" \
-  --destination-port-range "*" \
-  --access Deny
 
 # Associate NSG with TargetVMSubnet
 az network vnet subnet update \
@@ -86,4 +72,5 @@ az network bastion create \
   --name myBastion \
   --vnet-name myVNet \
   --public-ip-address bastionPublicIP \
+  --sku Standard \
   --location eastus
